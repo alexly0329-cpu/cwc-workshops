@@ -99,9 +99,13 @@ def setup_skill(folder: str) -> dict:
 #   (call setup_investigator() before reading state.version("investigator"))
 # Part 4 adds setup_skill("postmortem-report") to skills.
 def setup_agent() -> str:
+    investigator_id = setup_investigator()
     config = dict(
         name=state.name("commander"), model=COMMANDER_MODEL, system=COMMANDER_SYSTEM,
         tools=TOOLS, skills=[setup_skill("incident-triage-runbook")], metadata=state.owner(),
+        multiagent={"type": "coordinator",
+                    "agents": [{"type": "agent", "id": investigator_id,
+                                "version": state.version("investigator")}]},
     )
     return state.sync(
         "agent", config,
@@ -192,7 +196,16 @@ def delete_session(session_id: str) -> None:
 # A sub-agent only has the tools in its own config, so it needs TOOLS too.
 # Then add the roster to setup_agent() (see the note there).
 def setup_investigator() -> str:
-    raise NotImplementedError
+    config = dict(
+        name=state.name("investigator"), model=INVESTIGATOR_MODEL, system=INVESTIGATOR_SYSTEM,
+        tools=TOOLS, skills=[setup_skill("incident-triage-runbook")], metadata=state.owner(),
+    )
+    return state.sync(
+        "investigator", config,
+        create=lambda: client.beta.agents.create(**config),
+        update=lambda agent_id: client.beta.agents.update(
+            agent_id, version=client.beta.agents.retrieve(agent_id).version, **config),
+    )
 
 
 # ══ PART 3 · memory stores ════════════════════════════════════════════════
