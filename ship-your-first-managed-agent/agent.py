@@ -124,7 +124,7 @@ def setup_agent() -> str:
 def start_session(agent_id: str, env_id: str, log_file_id: str) -> str:
     session = client.beta.sessions.create(
         agent=agent_id, environment_id=env_id, metadata=state.owner(),
-        resources=[{"type": "file", "file_id": log_file_id, "mount_path": "app.log"}],
+        resources=[{"type": "file", "file_id": log_file_id, "mount_path": "app.log"}, *setup_memory()],
     )
     return session.id
 
@@ -233,7 +233,36 @@ def setup_investigator() -> str:
 #                  /incidents/<date>-<INCIDENT_ID>.md: root cause, how you proved it, the fix."
 # If the notebook instructions never say to write, the agent never will.
 def setup_memory() -> list[dict]:
-    raise NotImplementedError
+    def create_history():
+        store = client.beta.memory_stores.create(
+            name=state.name("team-history"),
+            description="What the team already knows: service map, known noisy log lines, "
+                        "past incidents and postmortem conventions.",
+            metadata=state.owner())
+        for path in sorted(MEMORY_SEED.rglob("*.md")):
+            client.beta.memory_stores.memories.create(
+                store.id, path="/" + path.relative_to(MEMORY_SEED).as_posix(),
+                content=path.read_text())
+        return store
+
+    def create_notebook():
+        return client.beta.memory_stores.create(
+            name=state.name("notebook"),
+            description="The agent's own notebook: notes on incidents it has worked.",
+            metadata=state.owner())
+
+    history_id = state.sync("memory:team-history", state.dir_fingerprint(MEMORY_SEED), create=create_history)
+    notebook_id = state.sync("memory:notebook", "v1", create=create_notebook)
+    return [
+        {"type": "memory_store", "memory_store_id": history_id, "access": "read_only",
+         "instructions": "Team knowledge. Read service-map.md and known-noise.md before you "
+                         "investigate, check incidents/ for anything like this one, and follow "
+                         "postmortem-conventions.md in anything you write up."},
+        {"type": "memory_store", "memory_store_id": notebook_id, "access": "read_write",
+         "instructions": "Your own notebook. Check it first for incidents you have already worked. "
+                         "When an investigation concludes, save a short note at "
+                         "/incidents/<date>-<INCIDENT_ID>.md: root cause, how you proved it, the fix."},
+    ]
 
 
 # ══ PART 4 · file output ══════════════════════════════════════════════════
