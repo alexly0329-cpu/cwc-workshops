@@ -102,7 +102,8 @@ def setup_agent() -> str:
     investigator_id = setup_investigator()
     config = dict(
         name=state.name("commander"), model=COMMANDER_MODEL, system=COMMANDER_SYSTEM,
-        tools=TOOLS, skills=[setup_skill("incident-triage-runbook")], metadata=state.owner(),
+        tools=TOOLS, skills=[setup_skill("incident-triage-runbook"), setup_skill("postmortem-report")],
+        metadata=state.owner(),
         multiagent={"type": "coordinator",
                     "agents": [{"type": "agent", "id": investigator_id,
                                 "version": state.version("investigator")}]},
@@ -273,4 +274,5 @@ def setup_memory() -> list[dict]:
 # Return [(f.filename, bytes), ...] for every f where wanted_output(f) is true.
 # Then add setup_skill("postmortem-report") to the commander's skills.
 def download_outputs(session_id: str) -> list[tuple[str, bytes]]:
-    raise NotImplementedError
+    files = client.beta.files.list(scope_id=session_id, betas=[MANAGED_AGENTS_BETA])
+    return [(f.filename, client.beta.files.download(f.id).read()) for f in files if wanted_output(f)]
